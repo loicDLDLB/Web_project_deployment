@@ -12,7 +12,7 @@
 import api from '../services/api';
 
 export default {
-  name: 'HomeView',
+  name: 'Home',
   data() {
     return { serverStatus: 'checking...' };
   },

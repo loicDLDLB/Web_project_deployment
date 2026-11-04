@@ -41,7 +41,7 @@ export default {
   data() {
     return {
       games: [
-        { name: 'Quiz', path: '/quiz' }
+        { name: 'game', path: '/game' }
         // Ajoute ici les prochains jeux : { name: 'Memory', path: '/memory' }
       ]
     };
