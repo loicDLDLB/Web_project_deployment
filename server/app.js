@@ -15,8 +15,8 @@ app.use(express.json());
 const db = mysql.createConnection({
     host: 'localhost',
     user: 'root',
-    password: 'MAXenceT2006',
-    database: 'LEVEL_UP'
+    password: 'Root1234!',
+    database: 'levelup'
 });
 
 // Connexion à la base de données
@@ -25,7 +25,7 @@ db.connect((err) => {
         console.error('Erreur de connexion à la base de données :', err);
         return;
     }
-    console.log('Connecté à la base de données MySQL "LEVEL_UP" !');
+    console.log('Connecté à la base de données MySQL "levelup" !');
 });
 
 // ---------- MIDDLEWARES DE PROTECTION ----------
@@ -193,3 +193,26 @@ app.post('/api/auth/login', (req, res) => {
 app.listen(port, () => {
  console.log(`Server is running at http://localhost:${port}`);
 }); 
+
+
+// Enregistrement d'un nouveau score (nécessite d'être connecté)
+app.post('/api/scores', authenticate, (req, res) => {
+  const { score } = req.body;
+  const userId = req.user.id; // Récupéré automatiquement via le jeton de connexion
+
+  if (typeof score !== 'number') {
+    return res.status(400).json({ error: 'Le score doit être un nombre.' });
+  }
+
+  db.query(
+    'INSERT INTO scores (user_id, score) VALUES (?, ?)',
+    [userId, score],
+    (err) => {
+      if (err) {
+        console.error('Erreur SQL :', err);
+        return res.status(500).json({ error: 'Erreur lors de la sauvegarde.' });
+      }
+      res.status(201).json({ message: 'Score enregistré avec succès !' });
+    }
+  );
+});
