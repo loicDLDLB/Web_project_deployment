@@ -193,11 +193,21 @@ export default {
 
 @keyframes blink { 50% { opacity: 0.5; } }
 
-/* MODE SOMBRE */
+
+.rule-box { 
+  padding: 15px; 
+  border-radius: 8px; 
+  text-align: left; 
+  font-weight: bold; 
+  background-color: #f8f9fa !important; 
+  color: #0f172a !important; 
+  border-left: 5px solid #007bff; 
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
 @media (prefers-color-scheme: dark) {
   .slot { border-bottom-color: #555; color: #eee; }
   .hint { color: #aaa; }
-  .rule-box { background-color: #2a2a2a; color: #eee; border-left-color: #4da3ff; }
   .popup-content { background: #222; color: #eee; }
   .popup-content h2 { color: #eee; }
 }
