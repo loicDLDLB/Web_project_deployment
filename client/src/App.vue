@@ -11,10 +11,30 @@
 <script>
 import NavBar from './components/NavBar.vue';
 import AppFooter from './components/Footer.vue';
+import api from './services/api';
+import { auth, updateUser, clearAuth } from './store/auth';
 
 export default {
   name: 'App',
-  components: { NavBar, AppFooter }
+  components: { NavBar, AppFooter },
+  async mounted() {
+    if (!auth.token) return;
+
+    try {
+      // Récupère le compte à jour (rôle, pseudo) depuis la base
+      const response = await api.get('/auth/me');
+      updateUser(response.data);
+    } catch (e) {
+      // 401 : le compte n'existe plus ou le jeton est invalide : on déconnecte
+      if (e.response && e.response.status === 401) {
+        clearAuth();
+        await this.$router.isReady();
+        if (this.$route.meta.requiresAuth) {
+          this.$router.push('/login');
+        }
+      }
+    }
+  }
 };
 </script>
 

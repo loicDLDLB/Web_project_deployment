@@ -28,3 +28,8 @@ export function clearAuth() {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
 }
+
+export function updateUser(user) {
+  auth.user = user;
+  localStorage.setItem('user', JSON.stringify(user));
+}

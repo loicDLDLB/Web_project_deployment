@@ -4,6 +4,7 @@ const mysql = require('mysql2');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const port = 3000;
+const saltRounds = 10;
 
 const JWT_SECRET = 'coucoucou'; // À changer en production, et à stocker dans une variable d'environnement
 
@@ -15,8 +16,8 @@ app.use(express.json());
 const db = mysql.createConnection({
     host: 'localhost',
     user: 'root',
-    password: 'Root1234!',
-    database: 'levelup'
+    password: 'MAXenceT2006',
+    database: 'level_up'
 });
 
 // Connexion à la base de données
@@ -30,7 +31,8 @@ db.connect((err) => {
 
 // ---------- MIDDLEWARES DE PROTECTION ----------
 
-// Vérifie que la requête contient un jeton valide
+// Vérifie le jeton, puis relit le compte en base :
+// le rôle est toujours à jour et un compte supprimé est refusé immédiatement
 function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
   const [type, token] = header.split(' ');
@@ -39,12 +41,24 @@ function authenticate(req, res, next) {
     return res.status(401).json({ error: 'Authentication required.' });
   }
 
+  let payload;
   try {
-    req.user = jwt.verify(token, JWT_SECRET); // contient { id, role }
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch (e) {
     return res.status(401).json({ error: 'Invalid or expired token.' });
   }
+
+  db.query('SELECT id, username, role FROM users WHERE id = ?', [payload.id], (err, rows) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ error: 'Server error.' });
+    }
+    if (rows.length === 0) {
+      return res.status(401).json({ error: 'Account no longer exists.' });
+    }
+    req.user = rows[0]; // { id, username, role } lus en base
+    next();
+  });
 }
 
 // Vérifie que l'utilisateur connecté a le rôle demandé
@@ -71,6 +85,38 @@ app.get('/api/auth/me', authenticate, (req, res) => {
   });
 });
 
+// Statistiques du dashboard (réservées aux admins)
+app.get('/api/admin/stats', authenticate, requireRole('admin'), (req, res) => {
+  const sql = `
+    SELECT
+      (SELECT COUNT(*) FROM users) AS totalUsers,
+      (SELECT COUNT(*) FROM users WHERE role = 'admin') AS totalAdmins,
+      (SELECT COUNT(*) FROM scores) AS totalGames,
+      (SELECT COALESCE(MAX(score), 0) FROM scores) AS bestScore,
+      (SELECT COALESCE(ROUND(AVG(score), 1), 0) FROM scores) AS avgScore,
+      (SELECT u.username
+         FROM scores s JOIN users u ON u.id = s.user_id
+         ORDER BY s.score DESC, s.created_at ASC
+         LIMIT 1) AS bestPlayer
+  `;
+
+  db.query(sql, (err, rows) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ error: 'Server error.' });
+    }
+    const row = rows[0];
+    res.json({
+      totalUsers: row.totalUsers,
+      totalAdmins: row.totalAdmins,
+      totalGames: row.totalGames,
+      bestScore: row.bestScore,
+      avgScore: Number(row.avgScore),
+      bestPlayer: row.bestPlayer // null s'il n'y a encore aucune partie
+    });
+  });
+});
+
 // Liste des utilisateurs (réservée aux admins)
 app.get('/api/admin/users', authenticate, requireRole('admin'), (req, res) => {
   db.query('SELECT id, username, email, role, created_at FROM users ORDER BY id', (err, rows) => {
@@ -79,6 +125,64 @@ app.get('/api/admin/users', authenticate, requireRole('admin'), (req, res) => {
       return res.status(500).json({ error: 'Server error.' });
     }
     res.json(rows);
+  });
+});
+
+// Passer un joueur en admin (l'inverse n'existe volontairement pas)
+app.put('/api/admin/users/:id/promote', authenticate, requireRole('admin'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'Invalid user id.' });
+  }
+
+  db.query('SELECT role FROM users WHERE id = ?', [id], (err, rows) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ error: 'Server error.' });
+    }
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    if (rows[0].role === 'admin') {
+      return res.status(400).json({ error: 'This user is already an admin.' });
+    }
+
+    db.query("UPDATE users SET role = 'admin' WHERE id = ?", [id], (err2) => {
+      if (err2) {
+        console.error(err2);
+        return res.status(500).json({ error: 'Server error.' });
+      }
+      res.json({ message: 'User promoted to admin.' });
+    });
+  });
+});
+
+// Supprimer un joueur (les comptes admin sont protégés)
+app.delete('/api/admin/users/:id', authenticate, requireRole('admin'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'Invalid user id.' });
+  }
+
+  db.query('SELECT role FROM users WHERE id = ?', [id], (err, rows) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ error: 'Server error.' });
+    }
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    if (rows[0].role === 'admin') {
+      return res.status(403).json({ error: 'Admin accounts cannot be deleted from the dashboard.' });
+    }
+
+    db.query('DELETE FROM users WHERE id = ?', [id], (err2) => {
+      if (err2) {
+        console.error(err2);
+        return res.status(500).json({ error: 'Server error.' });
+      }
+      res.json({ message: 'User deleted.' });
+    });
   });
 });
 
@@ -91,7 +195,6 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', users: results[0].nb });
   });
 });
-
 // ---------- INSCRIPTION ----------
 app.post('/api/auth/register', (req, res) => {
   const { username, email, password } = req.body;
@@ -119,7 +222,7 @@ app.post('/api/auth/register', (req, res) => {
   }
 
   // Vérifie que le pseudo et l'email ne sont pas déjà pris
-  db.query('SELECT id FROM users WHERE email = ? OR username = ?', [email, username], async (err, rows) => {
+  db.query('SELECT id FROM users WHERE email = ? OR username = ?', [email, username], (err, rows) => {
     if (err) {
       console.error(err);
       return res.status(500).json({ error: 'Server error.' });
@@ -128,26 +231,31 @@ app.post('/api/auth/register', (req, res) => {
       return res.status(409).json({ error: 'This username or email is already used.' });
     }
 
-    try {
-      // Hachage du mot de passe : on ne stocke JAMAIS le mot de passe en clair
-      const passwordHash = await bcrypt.hash(password, 10);
-
-      // Le rôle n'est pas lu dans la requête : tout nouveau compte est "player"
-      db.query(
-        'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
-        [username, email, passwordHash],
-        (err2) => {
-          if (err2) {
-            console.error(err2);
-            return res.status(500).json({ error: 'Server error.' });
+    // Hachage du mot de passe (même principe que dans le cours) :
+    // 1) on génère un sel, 2) on hache le mot de passe avec ce sel, 3) on enregistre le hash
+    bcrypt
+      .genSalt(saltRounds)
+      .then((salt) => {
+        return bcrypt.hash(password, salt);
+      })
+      .then((hash) => {
+        // Le rôle n'est pas lu dans la requête : tout nouveau compte est "player"
+        db.query(
+          'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+          [username, email, hash],
+          (err2) => {
+            if (err2) {
+              console.error(err2);
+              return res.status(500).json({ error: 'Server error.' });
+            }
+            res.status(201).json({ message: 'Account created.' });
           }
-          res.status(201).json({ message: 'Account created.' });
-        }
-      );
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: 'Server error.' });
-    }
+        );
+      })
+      .catch((e) => {
+        console.error(e.message);
+        res.status(500).json({ error: 'Server error.' });
+      });
   });
 });
 
@@ -162,7 +270,7 @@ app.post('/api/auth/login', (req, res) => {
   db.query(
     'SELECT id, username, email, password_hash, role FROM users WHERE email = ?',
     [email],
-    async (err, rows) => {
+    (err, rows) => {
       if (err) {
         console.error(err);
         return res.status(500).json({ error: 'Server error.' });
@@ -174,18 +282,27 @@ app.post('/api/auth/login', (req, res) => {
       }
 
       const user = rows[0];
-      const match = await bcrypt.compare(password, user.password_hash);
-      if (!match) {
-        return res.status(401).json({ error: 'Invalid email or password.' });
-      }
 
-      // Jeton de session valable 2 heures
-      const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '2h' });
+      // bcrypt.compare renvoie true ou false (comme dans le cours : validateUser)
+      bcrypt
+        .compare(password, user.password_hash)
+        .then((match) => {
+          if (!match) {
+            return res.status(401).json({ error: 'Invalid email or password.' });
+          }
 
-      res.json({
-        token,
-        user: { id: user.id, username: user.username, role: user.role }
-      });
+          // Jeton de session valable 48 heures
+          const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '48h' });
+
+          res.json({
+            token,
+            user: { id: user.id, username: user.username, role: user.role }
+          });
+        })
+        .catch((e) => {
+          console.error(e.message);
+          res.status(500).json({ error: 'Server error.' });
+        });
     }
   );
 });

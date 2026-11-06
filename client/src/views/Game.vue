@@ -178,7 +178,16 @@ export default {
 
 /* Liste des règles */
 .rules-list { display: flex; flex-direction: column; gap: 10px; }
-.rule-box { padding: 15px; border-radius: 8px; text-align: left; font-weight: bold; background-color: #f8f9fa; border-left: 5px solid #007bff; }
+.rule-box {
+  padding: 15px;
+  border-radius: 8px;
+  text-align: left;
+  font-weight: bold;
+  background-color: #f8f9fa;
+  color: #0f172a;
+  border-left: 5px solid #007bff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
 .level-badge { background: #007bff; color: white; padding: 3px 8px; border-radius: 4px; font-size: 12px; margin-right: 10px; }
 
 /* Boutons */
@@ -190,25 +199,27 @@ export default {
 .popup-content { background: white; padding: 40px; border-radius: 12px; text-align: center; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
 .popup-content h2 { margin-top: 0; color: #333; }
 .final-score { font-size: 24px; font-weight: bold; color: #007bff; margin: 20px 0; }
+.save-error { color: #dc2626; font-size: 14px; }
 
 @keyframes blink { 50% { opacity: 0.5; } }
 
+/* ---------- Mode sombre (classe ajoutée par la navbar) ---------- */
+body.dark-mode .slot { border-bottom-color: #30363d; color: #f8fafc; }
+body.dark-mode .slot.filled { border-bottom-color: #00f0ff; color: #00f0ff; }
+body.dark-mode .hint { color: #adb1b7; }
 
-.rule-box { 
-  padding: 15px; 
-  border-radius: 8px; 
-  text-align: left; 
-  font-weight: bold; 
-  background-color: #f8f9fa !important; 
-  color: #0f172a !important; 
-  border-left: 5px solid #007bff; 
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+body.dark-mode .rule-box {
+  background-color: #161b22;
+  color: #f8fafc;
+  border-left-color: #00f0ff;
 }
+body.dark-mode .level-badge { background: #00f0ff; color: #0f111a; }
 
-@media (prefers-color-scheme: dark) {
-  .slot { border-bottom-color: #555; color: #eee; }
-  .hint { color: #aaa; }
-  .popup-content { background: #222; color: #eee; }
-  .popup-content h2 { color: #eee; }
-}
+body.dark-mode .action-btn { background: #00f0ff; color: #0f111a; }
+body.dark-mode .action-btn:hover { background: #00c8d6; }
+
+body.dark-mode .popup-content { background: #161b22; color: #adb1b7; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6); }
+body.dark-mode .popup-content h2 { color: #f8fafc; }
+body.dark-mode .final-score { color: #00f0ff; }
+body.dark-mode .save-error { color: #f87171; }
 </style>
