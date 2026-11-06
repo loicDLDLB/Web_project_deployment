@@ -16,8 +16,8 @@ app.use(express.json());
 const db = mysql.createConnection({
     host: 'localhost',
     user: 'root',
-    password: 'MAXenceT2006',
-    database: 'level_up'
+    password: 'Root1234!',
+    database: 'levelup'
 });
 
 // Connexion à la base de données
@@ -332,4 +332,50 @@ app.post('/api/scores', authenticate, (req, res) => {
       res.status(201).json({ message: 'Score enregistré avec succès !' });
     }
   );
+});
+
+// LEADERBOARD 
+app.get('/api/scores/leaderboard', authenticate, (req, res) => {
+  const userId = req.user.id;
+
+  const top5Sql = `
+    SELECT u.username, MAX(s.score) as bestScore
+    FROM scores s
+    JOIN users u ON s.user_id = u.id
+    GROUP BY u.id
+    ORDER BY bestScore DESC
+    LIMIT 5
+  `;
+
+  db.query(top5Sql, (err, top5Rows) => {
+    if (err) return res.status(500).json({ error: 'Server error' });
+
+    db.query('SELECT MAX(score) as myBest FROM scores WHERE user_id = ?', [userId], (err, bestRows) => {
+      if (err) return res.status(500).json({ error: 'Server error' });
+
+      const myBest = bestRows[0].myBest;
+      if (myBest === null) {
+        return res.json({ top5: top5Rows, myStats: null });
+      }
+
+      const statsSql = `
+        SELECT 
+          (SELECT COUNT(DISTINCT user_id) FROM scores) as totalPlayers,
+          (SELECT COUNT(*) FROM (SELECT MAX(score) as maxScore FROM scores GROUP BY user_id) as userMaxes WHERE maxScore < ?) as beatenPlayers
+      `;
+
+      db.query(statsSql, [myBest], (err, statsRows) => {
+        if (err) return res.status(500).json({ error: 'Server error' });
+
+        const total = statsRows[0].totalPlayers;
+        const beaten = statsRows[0].beatenPlayers;
+        const percentile = total > 1 ? Math.round((beaten / (total - 1)) * 100) : 100;
+
+        res.json({
+          top5: top5Rows,
+          myStats: { bestScore: myBest, percentile: percentile }
+        });
+      });
+    });
+  });
 });

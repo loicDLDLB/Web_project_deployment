@@ -21,7 +21,7 @@ export default {
     if (!auth.token) return;
 
     try {
-      // Récupère le compte à jour (rôle, pseudo) depuis la base
+      // Récupère le compte à jour 
       const response = await api.get('/auth/me');
       updateUser(response.data);
     } catch (e) {
@@ -36,6 +36,7 @@ export default {
     }
   }
 };
+
 </script>
 
 <style>
