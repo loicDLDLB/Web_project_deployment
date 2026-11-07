@@ -379,3 +379,91 @@ app.get('/api/scores/leaderboard', authenticate, (req, res) => {
     });
   });
 });
+
+// Get player stats
+app.get('/api/scores/my-stats', authenticate, (req, res) => {
+  const userId = req.user.id;
+
+  const statsSql = `
+    SELECT 
+      COUNT(*) as gamesPlayed, 
+      ROUND(AVG(score)) as averageScore, 
+      MAX(score) as bestScore 
+    FROM scores 
+    WHERE user_id = ?
+  `;
+
+  db.query(statsSql, [userId], (err, results) => {
+    if (err) return res.status(500).json({ error: 'Database error' });
+
+    const stats = results[0];
+    const bestScore = stats.bestScore || 0;
+
+    if (bestScore === 0) {
+      return res.json({ gamesPlayed: 0, averageScore: 0, bestScore: 0, percentile: 100 });
+    }
+
+    const rankSql = `
+      SELECT 
+        (SELECT COUNT(DISTINCT user_id) FROM scores) as total,
+        (SELECT COUNT(*) FROM (SELECT MAX(score) as maxScore FROM scores GROUP BY user_id) as maxes WHERE maxScore < ?) as beaten
+    `;
+
+    db.query(rankSql, [bestScore], (err, rankResults) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+
+      const total = rankResults[0].total;
+      const beaten = rankResults[0].beaten;
+      const percentile = total > 1 ? Math.round((beaten / (total - 1)) * 100) : 100;
+
+      res.json({
+        gamesPlayed: stats.gamesPlayed,
+        averageScore: stats.averageScore || 0,
+        bestScore: bestScore,
+        percentile: percentile
+      });
+    });
+  });
+});
+
+// Get last 10 games
+app.get('/api/scores/my-history', authenticate, (req, res) => {
+  const userId = req.user.id;
+  // Note: verify if your date column is named 'created_at' in the scores table
+  const sql = 'SELECT score, created_at as played_at FROM scores WHERE user_id = ? ORDER BY created_at DESC LIMIT 10';
+  
+  db.query(sql, [userId], (err, results) => {
+    if (err) return res.status(500).json({ error: 'Database error' });
+    res.json(results);
+  });
+});
+
+// Update user profile
+app.put('/api/users/profile', authenticate, async (req, res) => {
+  const userId = req.user.id;
+  const { username, email, password } = req.body;
+  const bcrypt = require('bcryptjs'); 
+
+  if (!username || !email) {
+    return res.status(400).json({ error: 'Username and email required' });
+  }
+
+  try {
+    if (password) {
+      const hash = await bcrypt.hash(password, 10);
+      const sql = 'UPDATE users SET username = ?, email = ?, password_hash = ? WHERE id = ?';
+      db.query(sql, [username, email, hash, userId], (err) => {
+        if (err) return res.status(500).json({ error: 'Failed to update profile' });
+        res.json({ user: { username, email } });
+      });
+    } else {
+      const sql = 'UPDATE users SET username = ?, email = ? WHERE id = ?';
+      db.query(sql, [username, email, userId], (err) => {
+        if (err) return res.status(500).json({ error: 'Failed to update profile' });
+        res.json({ user: { username, email } });
+      });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
