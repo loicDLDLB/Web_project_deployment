@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:3000/api'
+  baseURL: '/api'
 });
 
 // Ajoute le jeton à chaque requête si le joueur est connecté

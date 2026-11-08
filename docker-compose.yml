@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+      - "8080:8080"
+    env_file:
+      - .env # Demande à Docker de lire directement tout ton fichier .env
+    volumes:
+      # Le miroir pour coder en direct
+      - ./:/app
+      
+      # Les boucliers pour conserver les modules Linux
+      - /app/node_modules
+      - /app/server/node_modules
+      - /app/client/node_modules

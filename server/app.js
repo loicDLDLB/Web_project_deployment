@@ -1,3 +1,5 @@
+require('dotenv').config(); // pour .env
+
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2');
@@ -6,19 +8,39 @@ const jwt = require('jsonwebtoken');
 const port = 3000;
 const saltRounds = 10;
 
-const JWT_SECRET = 'coucoucou'; // À changer en production, et à stocker dans une variable d'environnement
+const JWT_SECRET = process.env.JWT_SECRET; // À changer en production, et à stocker dans une variable d'environnement
 
 const app = express();
 
-app.use(cors({ origin: ['http://localhost:8080', 'http://localhost:8081'] }));
+const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : [];
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
+console.log("👉 Hôte ciblé :", process.env.DB_HOST || 'host.docker.internal');
+
 const db = mysql.createConnection({
+  // Utilise l'adresse injectée par Docker, ou host.docker.internal par défaut
+  host: process.env.DB_HOST || 'host.docker.internal',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || 'Root1234!',
+  database: process.env.DB_NAME || 'levelup'
+});
+
+/*const db = mysql.createConnection({
     host: 'localhost',
     user: 'root',
     password: 'Root1234!',
     database: 'levelup'
 });
+
+const db = mysql.createConnection({
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT || 3306, // Lit le port 3306 du .env
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME
+});
+*/
 
 // Connexion à la base de données
 db.connect((err) => {
@@ -308,8 +330,9 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.listen(port, () => {
- console.log(`Server is running at http://localhost:${port}`);
-}); 
+  console.log(`Server is running on port ${port}`);
+});
+
 
 
 // Enregistrement d'un nouveau score (nécessite d'être connecté)
@@ -317,7 +340,7 @@ app.post('/api/scores', authenticate, (req, res) => {
   const { score } = req.body;
   const userId = req.user.id; // Récupéré automatiquement via le jeton de connexion
 
-  if (typeof score !== 'number') {
+  if (typeof score !== 'number' || score < 0 || score > 10000) {
     return res.status(400).json({ error: 'Le score doit être un nombre.' });
   }
 
