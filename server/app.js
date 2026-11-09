@@ -2,19 +2,44 @@ require('dotenv').config(); // pour .env
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const mysql = require('mysql2');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const port = 3000;
 const saltRounds = 10;
+const rateLimit = require('express-rate-limit');
 
 const JWT_SECRET = process.env.JWT_SECRET; // À changer en production, et à stocker dans une variable d'environnement
 
 const app = express();
 
+app.use(helmet());
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 900, // 900 requêtes par IP sur le site entier (largement suffisant pour jouer)
+  message: { error: 'Serveur surchargé, veuillez patienter.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 2. Le bouclier STRICT (Protège contre la force brute)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 10, // 10 essais max pour le mot de passe
+  message: { error: 'Trop de tentatives, réessayez dans 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/', globalLimiter);
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+
 const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : [];
 app.use(cors({ origin: allowedOrigins }));
-app.use(express.json());
+app.use(express.json({ limit: '10kb' }));
 
 console.log("👉 Hôte ciblé :", process.env.DB_HOST || 'host.docker.internal');
 
@@ -151,32 +176,61 @@ app.get('/api/admin/users', authenticate, requireRole('admin'), (req, res) => {
 });
 
 // Passer un joueur en admin (l'inverse n'existe volontairement pas)
-app.put('/api/admin/users/:id/promote', authenticate, requireRole('admin'), (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(400).json({ error: 'Invalid user id.' });
+// Update user profile
+app.put('/api/users/profile', authenticate, async (req, res) => {
+  const userId = req.user.id;
+  const { username, email, password } = req.body;
+  // (bcrypt est déjà importé en haut de ton fichier, inutile de le require ici)
+
+  // 1. LE BOUCLIER : Validation stricte des données entrantes
+  const errors = {};
+  
+  if (typeof username !== 'string' || !/^[A-Za-z0-9_]{3,20}$/.test(username)) {
+    errors.username = 'Username must be 3-20 characters (letters, numbers, underscores).';
+  }
+  
+  if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 255) {
+    errors.email = 'Please enter a valid email address.';
+  }
+  
+  // Le mot de passe est optionnel lors d'une mise à jour. On ne le teste que si le joueur veut le changer.
+  if (password) {
+    if (
+      typeof password !== 'string' ||
+      password.length < 8 ||
+      !/[A-Z]/.test(password) ||
+      !/[a-z]/.test(password) ||
+      !/[0-9]/.test(password)
+    ) {
+      errors.password = 'Password needs 8+ characters, an uppercase letter, a lowercase letter and a number.';
+    }
   }
 
-  db.query('SELECT role FROM users WHERE id = ?', [id], (err, rows) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json({ error: 'Server error.' });
-    }
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'User not found.' });
-    }
-    if (rows[0].role === 'admin') {
-      return res.status(400).json({ error: 'This user is already an admin.' });
-    }
+  // Si on a trouvé la moindre erreur, on bloque la requête avant de toucher à la base de données
+  if (Object.keys(errors).length > 0) {
+    return res.status(400).json({ errors });
+  }
 
-    db.query("UPDATE users SET role = 'admin' WHERE id = ?", [id], (err2) => {
-      if (err2) {
-        console.error(err2);
-        return res.status(500).json({ error: 'Server error.' });
-      }
-      res.json({ message: 'User promoted to admin.' });
-    });
-  });
+  // 2. L'ACTION : Mise à jour sécurisée en base de données
+  try {
+    if (password) {
+      const hash = await bcrypt.hash(password, 10);
+      const sql = 'UPDATE users SET username = ?, email = ?, password_hash = ? WHERE id = ?';
+      db.query(sql, [username, email, hash, userId], (err) => {
+        // Note : Si l'email ou le pseudo est déjà pris, MySQL renverra une erreur que l'on capte ici
+        if (err) return res.status(500).json({ error: 'Failed to update profile (Username/Email might be taken)' });
+        res.json({ user: { username, email } });
+      });
+    } else {
+      const sql = 'UPDATE users SET username = ?, email = ? WHERE id = ?';
+      db.query(sql, [username, email, userId], (err) => {
+        if (err) return res.status(500).json({ error: 'Failed to update profile (Username/Email might be taken)' });
+        res.json({ user: { username, email } });
+      });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // Supprimer un joueur (les comptes admin sont protégés)
